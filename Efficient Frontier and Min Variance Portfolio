@@ -1,0 +1,121 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+from datetime import datetime
+from datetime import timedelta
+from timeit import default_timer as timer
+
+start = timer()
+
+class my_portfolio:
+
+    def __init__(self, df, portfolio_num):
+        
+        self.df = df
+        self.portfolio_num = portfolio_num
+        
+    def gen_portfolios(self):
+
+        asset_num = len(self.df.columns)
+        indiv_ret = self.df.mean()
+        
+        #get proportion of weights from sum of weights in each portfolio
+
+        port_weights = [np.random.random(asset_num)/np.sum(np.random.random(asset_num)) 
+                                                for portfolio in range(self.portfolio_num)]
+
+        port_returns = [np.dot(port_weights[portfolio], indiv_ret) 
+                            for portfolio in range(self.portfolio_num)]
+
+        port_vol = [np.sqrt(self.df.cov().mul(port_weights[portfolio], axis =0)
+                                .mul(port_weights[portfolio], axis =1).sum().sum()) 
+                                            for portfolio in range(self.portfolio_num)]
+
+        self.port_weights = port_weights
+        self.port_returns = port_returns
+        self.port_vol = port_vol
+        
+    def ret_vol_sharpe(self):
+        
+        '''Calculate return, volatility and Sharpe'''
+
+        opt = {'Returns': self.port_returns, 'Volatility': self.port_vol}
+
+        for counter, symbol in enumerate(self.df.columns.tolist()):
+            opt[symbol + ' weights'] = [w[counter] for w in self.port_weights]
+
+        port = pd.DataFrame(opt)
+        
+        self.port = port
+
+        #sharpe = returns/sd
+        port.insert(2, 'Sharpe', port['Returns']/port['Volatility'])
+        
+        #Min Volatility
+        min_vol_port = port.iloc[port['Volatility'].idxmin()]
+        self.min_vol_port = min_vol_port
+
+        #Max Returns
+        max_ret_port = port.iloc[port['Returns'].idxmax()]
+        self.max_ret_port = max_ret_port
+        
+        #Max Sharpe
+        optimal_risky_port = port.iloc[port['Sharpe'].idxmax()]
+        self.optimal_risky_port = optimal_risky_port
+        
+        Opt_Weights = pd.concat([min_vol_port, max_ret_port, optimal_risky_port], axis = 1).T
+        Opt_Weights.index = ['Min Vol Port', 'Max Return Port', 'Max Sharpe Port']
+
+        self.Opt_Weights = Opt_Weights
+        
+    def plot_graph(self):
+        
+        '''Plot return/volatility graph'''
+
+        plt.subplots(figsize = [10,10])
+        plt.scatter(self.port['Volatility'], self.port['Returns'], c=self.port['Sharpe'], cmap= 'YlGnBu', marker = 'o', s=10, alpha=0.3)
+        #plotting min volatility portfolio
+        plt.scatter(self.min_vol_port[1], self.min_vol_port[0], color = 'r', marker = '*', s =200, label = 'Min Volatility')
+        #plotting max returns portfolio
+        plt.scatter(self.max_ret_port[1], self.max_ret_port[0], color = 'b', marker = '*', s =200, label = 'Max Returns')
+        #plotting max sharpe portfolio
+        plt.scatter(self.optimal_risky_port[1], self.optimal_risky_port[0], color = 'g', marker = '*', s =200, label = 'Max Sharpe')
+        plt.colorbar(label='Sharpe')
+        plt.xlabel("Risk (Volatility)")
+        plt.ylabel("Expected Returns")
+        plt.legend(labelspacing = 0.8)
+        
+        plt.savefig('Return - Volatility Graph.png')
+
+    def run_all(self):
+        
+        self.gen_portfolios()
+        self.ret_vol_sharpe()
+        self.plot_graph()
+    
+if __name__ == "__main__":
+    
+    '''Define Period'''
+    start_date = datetime(2020, 1, 1)
+    end_date = datetime(2021, 1, 31)
+
+    '''Download prices'''
+    stocks = "AMZN AAPL GOOG SHOP IBM"
+    data = yf.download(stocks, start = start_date, end = end_date, group_by='tickers')
+
+    '''Generate 10,000 portfolios'''
+    portfolio_num = 10000
+    
+    #extract only Close Prices
+    ticks = data.droplevel(1, axis=1).columns
+    data = data.droplevel(0, axis=1)['Close']
+    data.columns = list(pd.unique(ticks))
+    
+    obj = my_portfolio(data, portfolio_num)
+    obj.run_all()
+    
+    print(obj.Opt_Weights)
+    
+end = timer()
+print(timedelta(seconds = end - start))
